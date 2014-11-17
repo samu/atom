@@ -360,6 +360,13 @@ class GitRepository
     repo = @getRepo(path)
     repo.getLineDiffs(repo.relativize(path), text, options)
 
+  getLineDiffDetails: (path, text) ->
+    # Ignore eol of line differences on windows so that files checked in as
+    # LF don't report every line modified when the text contains CRLF endings.
+    options = ignoreEolWhitespace: process.platform is 'win32'
+    repo = @getRepo(path)
+    repo.getLineDiffDetails(repo.relativize(path), text, options)
+
   ###
   Section: Checking Out
   ###
