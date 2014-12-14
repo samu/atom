@@ -2,7 +2,7 @@
 
 module.exports =
 class PanelContainer
-  constructor: ({@viewRegistry, @location}) ->
+  constructor: ({@location}={}) ->
     @emitter = new Emitter
     @subscriptions = new CompositeDisposable
     @panels = []
@@ -30,8 +30,6 @@ class PanelContainer
   Section: Panels
   ###
 
-  getView: -> @viewRegistry.getView(this)
-
   getLocation: -> @location
 
   isModal: -> @location is 'modal'
@@ -49,6 +47,11 @@ class PanelContainer
 
     @emitter.emit 'did-add-panel', {panel, index}
     panel
+
+  panelForItem: (item) ->
+    for panel in @panels
+      return panel if panel.getItem() is item
+    null
 
   panelDestroyed: (panel) ->
     index = @panels.indexOf(panel)

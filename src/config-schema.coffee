@@ -115,7 +115,8 @@ module.exports =
       autoIndent:
         type: 'boolean'
         default: true
-      normalizeIndentOnPaste:
+        description: 'Automatically indent the cursor when inserting a newline'
+      autoIndentOnPaste:
         type: 'boolean'
         default: true
       nonWordCharacters:
@@ -148,7 +149,7 @@ module.exports =
         default: false
       undoGroupingInterval:
         type: 'integer'
-        default: 500
+        default: 300
         minimum: 0
         description: 'Time interval in milliseconds within which operations will be grouped together in the undo history'
       useHardwareAcceleration:
@@ -183,3 +184,9 @@ module.exports =
         type: 'boolean'
         default: process.platform isnt 'darwin'
         description: 'Increase/decrease the editor font size when pressing the Ctrl key and scrolling the mouse up/down.'
+
+if process.platform in ['win32', 'linux']
+  module.exports.core.properties.autoHideMenuBar =
+    type: 'boolean'
+    default: false
+    description: 'Automatically hide the menu bar and toggle it by pressing Alt. This is only supported on Windows & Linux.'

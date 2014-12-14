@@ -9,12 +9,17 @@ _ = require 'underscore-plus'
 fs = require 'fs-plus'
 Grim = require 'grim'
 KeymapManager = require '../src/keymap-extensions'
-{$, WorkspaceView, Workspace} = require 'atom'
+
+# FIXME: Remove jquery from this
+{$} = require '../src/space-pen-extensions'
+
 Config = require '../src/config'
 {Point} = require 'text-buffer'
 Project = require '../src/project'
+Workspace = require '../src/workspace'
 TextEditor = require '../src/text-editor'
 TextEditorView = require '../src/text-editor-view'
+TextEditorElement = require '../src/text-editor-element'
 TokenizedBuffer = require '../src/tokenized-buffer'
 TextEditorComponent = require '../src/text-editor-component'
 pathwatcher = require 'pathwatcher'
@@ -76,13 +81,15 @@ beforeEach ->
   atom.commands.restoreSnapshot(commandsToRestore)
   atom.styles.restoreSnapshot(styleElementsToRestore)
 
+  atom.workspaceViewParentSelector = '#jasmine-content'
+
   window.resetTimeouts()
   atom.packages.packageStates = {}
 
   serializedWindowState = null
 
   spyOn(atom, 'saveSync')
-  atom.syntax.clearGrammarOverrides()
+  atom.grammars.clearGrammarOverrides()
 
   spy = spyOn(atom.packages, 'resolvePackagePath').andCallFake (packageName) ->
     if specPackageName and packageName is specPackageName
@@ -111,8 +118,7 @@ beforeEach ->
   config.save.reset()
 
   # make editor display updates synchronous
-  spyOn(TextEditorView.prototype, 'requestDisplayUpdate').andCallFake -> @updateDisplay()
-  TextEditorComponent.performSyncUpdates = true
+  TextEditorElement::setUpdatedSynchronously(true)
 
   spyOn(atom, "setRepresentedFilename")
   spyOn(window, "setTimeout").andCallFake window.fakeSetTimeout
@@ -135,8 +141,9 @@ afterEach ->
   atom.menu.template = []
   atom.contextMenu.clear()
 
-  atom.workspaceView?.remove?()
-  atom.workspaceView = null
+  atom.workspace?.destroy()
+  atom.workspace = null
+  atom.__workspaceView = null
   delete atom.state.workspace
 
   atom.project?.destroy()
@@ -150,7 +157,7 @@ afterEach ->
 
   jasmine.unspy(atom, 'saveSync')
   ensureNoPathSubscriptions()
-  atom.syntax.clearObservers()
+  atom.grammars.clearObservers()
   waits(0) # yield to ui thread to make screen update more frequently
 
 ensureNoPathSubscriptions = ->
@@ -190,6 +197,17 @@ jasmine.StringPrettyPrinter.prototype.emitObject = (obj) ->
 jasmine.unspy = (object, methodName) ->
   throw new Error("Not a spy") unless object[methodName].hasOwnProperty('originalValue')
   object[methodName] = object[methodName].originalValue
+
+jasmine.attachToDOM = (element) ->
+  jasmineContent = document.querySelector('#jasmine-content')
+  jasmineContent.appendChild(element) unless jasmineContent.contains(element)
+
+deprecationsSnapshot = null
+jasmine.snapshotDeprecations = ->
+  deprecationsSnapshot = Grim.getDeprecations() # suppress deprecations!!
+
+jasmine.restoreDeprecationsSnapshot = ->
+  Grim.grimDeprecations = deprecationsSnapshot
 
 addCustomMatchers = (spec) ->
   spec.addMatchers

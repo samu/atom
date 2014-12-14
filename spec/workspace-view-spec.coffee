@@ -1,4 +1,4 @@
-{$, $$, WorkspaceView, View} = require 'atom'
+{$, $$, View} = require '../src/space-pen-extensions'
 Q = require 'q'
 path = require 'path'
 temp = require 'temp'
@@ -10,6 +10,8 @@ describe "WorkspaceView", ->
   pathToOpen = null
 
   beforeEach ->
+    jasmine.snapshotDeprecations()
+
     atom.project.setPaths([atom.project.resolve('dir')])
     pathToOpen = atom.project.resolve('a')
     atom.workspace = new Workspace
@@ -19,6 +21,9 @@ describe "WorkspaceView", ->
 
     waitsForPromise ->
       atom.workspace.open(pathToOpen)
+
+  afterEach ->
+    jasmine.restoreDeprecationsSnapshot()
 
   describe "@deserialize()", ->
     viewState = null
@@ -277,15 +282,15 @@ describe "WorkspaceView", ->
       workspaceElement = atom.views.getView(atom.workspace)
 
     it 'inserts panel container elements in the correct places in the DOM', ->
-      leftContainer = workspaceElement.querySelector('atom-panel-container[location="left"]')
-      rightContainer = workspaceElement.querySelector('atom-panel-container[location="right"]')
+      leftContainer = workspaceElement.querySelector('atom-panel-container.left')
+      rightContainer = workspaceElement.querySelector('atom-panel-container.right')
       expect(leftContainer.nextSibling).toBe workspaceElement.verticalAxis
       expect(rightContainer.previousSibling).toBe workspaceElement.verticalAxis
 
-      topContainer = workspaceElement.querySelector('atom-panel-container[location="top"]')
-      bottomContainer = workspaceElement.querySelector('atom-panel-container[location="bottom"]')
+      topContainer = workspaceElement.querySelector('atom-panel-container.top')
+      bottomContainer = workspaceElement.querySelector('atom-panel-container.bottom')
       expect(topContainer.nextSibling).toBe workspaceElement.paneContainer
       expect(bottomContainer.previousSibling).toBe workspaceElement.paneContainer
 
-      modalContainer = workspaceElement.querySelector('atom-panel-container[location="modal"]')
+      modalContainer = workspaceElement.querySelector('atom-panel-container.modal')
       expect(modalContainer.parentNode).toBe workspaceElement

@@ -6,6 +6,7 @@ scrollbarStyle = require 'scrollbar-style'
 {Range, Point} = require 'text-buffer'
 grim = require 'grim'
 {CompositeDisposable} = require 'event-kit'
+ipc = require 'ipc'
 
 GutterComponent = require './gutter-component'
 InputComponent = require './input-component'
@@ -18,9 +19,6 @@ module.exports =
 TextEditorComponent = React.createClass
   displayName: 'TextEditorComponent'
   mixins: [SubscriberMixin]
-
-  statics:
-    performSyncUpdates: false
 
   visible: false
   autoHeight: false
@@ -198,7 +196,6 @@ TextEditorComponent = React.createClass
   componentWillUnmount: ->
     {editor, hostElement} = @props
 
-    hostElement.__spacePenView.trigger 'editor:will-be-removed', [hostElement.__spacePenView]
     @unsubscribe()
     @scopedConfigSubscriptions.dispose()
     window.removeEventListener 'resize', @requestHeightAndWidthMeasurement
@@ -242,7 +239,7 @@ TextEditorComponent = React.createClass
       @updateRequestedWhilePaused = true
       return
 
-    if @performSyncUpdates ? TextEditorComponent.performSyncUpdates
+    if @props.hostElement.isUpdatedSynchronously()
       @forceUpdate()
     else unless @updateRequested
       @updateRequested = true
@@ -363,14 +360,16 @@ TextEditorComponent = React.createClass
     filteredDecorations = {}
     for markerId, decorations of decorationsByMarkerId
       marker = editor.getMarker(markerId)
-      headBufferPosition = marker.getHeadBufferPosition()
+      headScreenPosition = marker.getHeadScreenPosition()
+      tailScreenPosition = marker.getTailScreenPosition()
       if marker.isValid()
         for decoration in decorations
           if decoration.isType('overlay')
             decorationParams = decoration.getProperties()
             filteredDecorations[markerId] ?=
               id: markerId
-              headPixelPosition: editor.pixelPositionForScreenPosition(headBufferPosition)
+              headPixelPosition: editor.pixelPositionForScreenPosition(headScreenPosition)
+              tailPixelPosition: editor.pixelPositionForScreenPosition(tailScreenPosition)
               decorations: []
             filteredDecorations[markerId].decorations.push decorationParams
     filteredDecorations
@@ -444,7 +443,10 @@ TextEditorComponent = React.createClass
 
     @subscribe @props.editor.onDidChangeSelectionRange =>
       if selectedText = @props.editor.getSelectedText()
-        clipboard.writeText(selectedText, 'selection')
+        # This uses ipc.send instead of clipboard.writeText because
+        # clipboard.writeText is a sync ipc call on Linux and that
+        # will slow down selections.
+        ipc.send('write-text-to-selection-clipboard', selectedText)
 
   observeConfig: ->
     @subscribe atom.config.observe 'editor.useHardwareAcceleration', @setUseHardwareAcceleration
@@ -662,8 +664,14 @@ TextEditorComponent = React.createClass
   onStylesheetsChanged: (styleElement) ->
     return unless @performedInitialMeasurement
     return unless atom.themes.isInitialLoadComplete()
-    @refreshScrollbars() if not styleElement.sheet? or @containsScrollbarSelector(styleElement.sheet)
-    @handleStylingChange()
+
+    # This delay prevents the styling from going haywire when stylesheets are
+    # reloaded in dev mode. It seems like a workaround for a browser bug, but
+    # not totally sure.
+    requestAnimationFrame =>
+      if @isMounted()
+        @refreshScrollbars() if not styleElement.sheet? or @containsScrollbarSelector(styleElement.sheet)
+        @handleStylingChange()
 
   onAllThemesLoaded: ->
     @refreshScrollbars()

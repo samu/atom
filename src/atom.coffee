@@ -11,6 +11,7 @@ _ = require 'underscore-plus'
 {Emitter} = require 'event-kit'
 {Model} = require 'theorist'
 fs = require 'fs-plus'
+{convertStackTrace, convertLine} = require 'coffeestack'
 
 {$} = require './space-pen-extensions'
 WindowEventHandler = require './window-event-handler'
@@ -33,6 +34,23 @@ class Atom extends Model
     startTime = Date.now()
     atom = @deserialize(@loadState(mode)) ? new this({mode, @version})
     atom.deserializeTimings.atom = Date.now() -  startTime
+
+    workspaceViewDeprecationMessage = """
+      atom.workspaceView is no longer available.
+      In most cases you will not need the view. See the Workspace docs for
+      alternatives: https://atom.io/docs/api/latest/Workspace.
+      If you do need the view, please use `atom.views.getView(atom.workspace)`,
+      which returns an HTMLElement.
+    """
+
+    Object.defineProperty atom, 'workspaceView',
+      get: ->
+        deprecate(workspaceViewDeprecationMessage)
+        atom.__workspaceView
+      set: (newValue) ->
+        deprecate(workspaceViewDeprecationMessage)
+        atom.__workspaceView = newValue
+
     atom
 
   # Deserializes the Atom environment from a state object
@@ -116,6 +134,9 @@ class Atom extends Model
   # Public: A {Clipboard} instance
   clipboard: null
 
+  # A {ServiceHub} instance
+  services: null
+
   # Public: A {ContextMenuManager} instance
   contextMenu: null
 
@@ -125,17 +146,26 @@ class Atom extends Model
   # Public: A {KeymapManager} instance
   keymaps: null
 
+  # Public: A {TooltipManager} instance
+  tooltips: null
+
+  # Experimental: A {NotificationManager} instance
+  notifications: null
+
   # Public: A {Project} instance
   project: null
 
-  # Public: A {Syntax} instance
-  syntax: null
+  # Public: A {GrammarRegistry} instance
+  grammars: null
 
   # Public: A {PackageManager} instance
   packages: null
 
   # Public: A {ThemeManager} instance
   themes: null
+
+  # Public: A {StyleManager} instance
+  styles: null
 
   # Public: A {DeserializerManager} instance
   deserializers: null
@@ -145,9 +175,6 @@ class Atom extends Model
 
   # Public: A {Workspace} instance
   workspace: null
-
-  # Public: A {WorkspaceView} instance
-  workspaceView: null
 
   ###
   Section: Construction and Destruction
@@ -172,12 +199,29 @@ class Atom extends Model
     unless @inDevMode() or @inSpecMode()
       require('grim').deprecate = ->
 
+    sourceMapCache = {}
+
     window.onerror = =>
-      @openDevTools()
-      @executeJavaScriptInDevTools('InspectorFrontendAPI.showConsole()')
       @lastUncaughtError = Array::slice.call(arguments)
+      [message, url, line, column, originalError] = @lastUncaughtError
+
+      convertedLine = convertLine(url, line, column, sourceMapCache)
+      {line, column} = convertedLine if convertedLine?
+      originalError.stack = convertStackTrace(originalError.stack, sourceMapCache) if originalError
+
+      eventObject = {message, url, line, column, originalError}
+
+      openDevTools = true
+      eventObject.preventDefault = -> openDevTools = false
+
+      @emitter.emit 'will-throw-error', eventObject
+
+      if openDevTools
+        @openDevTools()
+        @executeJavaScriptInDevTools('InspectorFrontendAPI.showConsole()')
+
       @emit 'uncaught-error', arguments...
-      @emitter.emit 'did-throw-error', arguments...
+      @emitter.emit 'did-throw-error', {message, url, line, column, originalError}
 
     @unsubscribe()
     @setBodyPlatformClass()
@@ -188,9 +232,12 @@ class Atom extends Model
     KeymapManager = require './keymap-extensions'
     ViewRegistry = require './view-registry'
     CommandRegistry = require './command-registry'
+    TooltipManager = require './tooltip-manager'
+    NotificationManager = require './notification-manager'
     PackageManager = require './package-manager'
     Clipboard = require './clipboard'
-    Syntax = require './syntax'
+    ServiceHub = require './service-hub'
+    GrammarRegistry = require './grammar-registry'
     ThemeManager = require './theme-manager'
     StyleManager = require './style-manager'
     ContextMenuManager = require './context-menu-manager'
@@ -213,6 +260,9 @@ class Atom extends Model
     @config = new Config({configDirPath, resourcePath})
     @keymaps = new KeymapManager({configDirPath, resourcePath})
     @keymap = @keymaps # Deprecated
+    @keymaps.subscribeToFileReadFailure()
+    @tooltips = new TooltipManager
+    @notifications = new NotificationManager
     @commands = new CommandRegistry
     @views = new ViewRegistry
     @packages = new PackageManager({devMode, configDirPath, resourcePath, safeMode})
@@ -222,8 +272,13 @@ class Atom extends Model
     @contextMenu = new ContextMenuManager({resourcePath, devMode})
     @menu = new MenuManager({resourcePath})
     @clipboard = new Clipboard()
+    @services = new ServiceHub
 
-    @syntax = @deserializers.deserialize(@state.syntax) ? new Syntax()
+    @grammars = @deserializers.deserialize(@state.grammars ? @state.syntax) ? new GrammarRegistry()
+
+    Object.defineProperty this, 'syntax', get: ->
+      deprecate "The atom.syntax global is deprecated. Use atom.grammars instead."
+      @grammars
 
     @subscribe @packages.onDidActivateAll => @watchThemes()
 
@@ -248,10 +303,31 @@ class Atom extends Model
   onDidBeep: (callback) ->
     @emitter.on 'did-beep', callback
 
+  # Extended: Invoke the given callback when there is an unhandled error, but
+  # before the devtools pop open
+  #
+  # * `callback` {Function} to be called whenever there is an unhandled error
+  #   * `event` {Object}
+  #     * `originalError` {Object} the original error object
+  #     * `message` {String} the original error object
+  #     * `url` {String} Url to the file where the error originated.
+  #     * `line` {Number}
+  #     * `column` {Number}
+  #     * `preventDefault` {Function} call this to avoid popping up the dev tools.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  onWillThrowError: (callback) ->
+    @emitter.on 'will-throw-error', callback
+
   # Extended: Invoke the given callback whenever there is an unhandled error.
   #
   # * `callback` {Function} to be called whenever there is an unhandled error
-  #   * `errorMessage` {String}
+  #   * `event` {Object}
+  #     * `originalError` {Object} the original error object
+  #     * `message` {String} the original error object
+  #     * `url` {String} Url to the file where the error originated.
+  #     * `line` {Number}
+  #     * `column` {Number}
   #
   # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidThrowError: (callback) ->
@@ -503,15 +579,19 @@ class Atom extends Model
     @packages.activate()
     @keymaps.loadUserKeymap()
     @requireUserInitScript() unless safeMode
+
     @menu.update()
+    @subscribe @config.onDidChange 'core.autoHideMenuBar', ({newValue}) =>
+      @setAutoHideMenuBar(newValue)
+    @setAutoHideMenuBar(true) if @config.get('core.autoHideMenuBar')
 
     maximize = dimensions?.maximized and process.platform isnt 'darwin'
     @displayWindow({maximize})
 
   unloadEditorWindow: ->
-    return if not @project and not @workspaceView
+    return if not @project
 
-    @state.syntax = @syntax.serialize()
+    @state.grammars = @grammars.serialize()
     @state.project = @project.serialize()
     @state.workspace = @workspace.serialize()
     @packages.deactivatePackages()
@@ -520,10 +600,10 @@ class Atom extends Model
     @windowState = null
 
   removeEditorWindow: ->
-    return if not @project and not @workspaceView
+    return if not @project
 
-    @workspaceView?.remove()
-    @workspaceView = null
+    @workspace?.destroy()
+    @workspace = null
     @project?.destroy()
     @project = null
 
@@ -536,7 +616,7 @@ class Atom extends Model
   # Essential: Visually and audibly trigger a beep.
   beep: ->
     shell.beep() if @config.get('core.audioBeep')
-    @workspaceView.trigger 'beep'
+    @__workspaceView?.trigger 'beep'
     @emitter.emit 'did-beep'
 
   # Essential: A flexible way to open a dialog akin to an alert dialog.
@@ -612,11 +692,13 @@ class Atom extends Model
 
     startTime = Date.now()
     @workspace = Workspace.deserialize(@state.workspace) ? new Workspace
-    @workspaceView = @views.getView(@workspace).__spacePenView
+
+    workspaceElement = @views.getView(@workspace)
+    @__workspaceView = workspaceElement.__spacePenView
     @deserializeTimings.workspace = Date.now() - startTime
 
-    @keymaps.defaultTarget = @workspaceView[0]
-    $(@workspaceViewParentSelector).append(@workspaceView)
+    @keymaps.defaultTarget = workspaceElement
+    document.querySelector(@workspaceViewParentSelector).appendChild(workspaceElement)
 
   deserializePackageStates: ->
     @packages.packageStates = @state.packageStates ? {}
@@ -713,6 +795,12 @@ class Atom extends Model
       else
         window[key] = value
 
+  onUpdateAvailable: (callback) ->
+    @emitter.on 'update-available', callback
+
+  updateAvailable: (details) ->
+    @emitter.emit 'update-available', details
+
   # Deprecated: Callers should be converted to use atom.deserializers
   registerRepresentationClass: ->
     deprecate("Callers should be converted to use atom.deserializers")
@@ -723,3 +811,7 @@ class Atom extends Model
 
   setBodyPlatformClass: ->
     document.body.classList.add("platform-#{process.platform}")
+
+  setAutoHideMenuBar: (autoHide) ->
+    ipc.send('call-window-method', 'setAutoHideMenuBar', autoHide)
+    ipc.send('call-window-method', 'setMenuBarVisibility', !autoHide)

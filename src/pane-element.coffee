@@ -43,18 +43,19 @@ class PaneElement extends HTMLElement
   createSpacePenShim: ->
     @__spacePenView = new PaneView(this)
 
-  getModel: -> @model
-
-  setModel: (@model) ->
+  initialize: (@model) ->
     @subscriptions.add @model.onDidActivate(@activated.bind(this))
     @subscriptions.add @model.observeActive(@activeStatusChanged.bind(this))
     @subscriptions.add @model.observeActiveItem(@activeItemChanged.bind(this))
     @subscriptions.add @model.onDidRemoveItem(@itemRemoved.bind(this))
     @subscriptions.add @model.onDidDestroy(@paneDestroyed.bind(this))
     @__spacePenView.setModel(@model)
+    this
+
+  getModel: -> @model
 
   activated: ->
-    @focus() unless @hasFocus()
+    @focus()
 
   activeStatusChanged: (active) ->
     if active
@@ -66,7 +67,7 @@ class PaneElement extends HTMLElement
     return unless item?
 
     hasFocus = @hasFocus()
-    itemView = @model.getView(item)
+    itemView = atom.views.getView(item)
 
     unless @itemViews.contains(itemView)
       @itemViews.appendChild(itemView)
@@ -94,14 +95,14 @@ class PaneElement extends HTMLElement
       itemView.style.display = 'none'
 
   itemRemoved: ({item, index, destroyed}) ->
-    if viewToRemove = @model.getView(item)
-      callRemoveHooks(viewToRemove)
+    if viewToRemove = atom.views.getView(item)
+      callRemoveHooks(viewToRemove) if destroyed
       viewToRemove.remove()
 
   paneDestroyed: ->
     @subscriptions.dispose()
 
-  getActiveView: -> @model.getView(@model.getActiveItem())
+  getActiveView: -> atom.views.getView(@model.getActiveItem())
 
   hasFocus: ->
     this is document.activeElement or @contains(document.activeElement)

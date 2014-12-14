@@ -93,6 +93,7 @@
     submenu: [
       { label: '&Reload', command: 'window:reload' }
       { label: 'Toggle &Full Screen', command: 'window:toggle-full-screen' }
+      { label: 'Toggle Menu Bar', command: 'window:toggle-menu-bar' }
       {
         label: 'Panes'
         submenu: [
@@ -163,6 +164,9 @@
       { label: 'View &Terms of Use', command: 'application:open-terms-of-use' }
       { label: 'View &License', command: 'application:open-license' }
       { label: 'VERSION', enabled: false }
+      { label: 'Restart and Install Update', command: 'application:install-update', visible: false}
+      { label: 'Check for Update', command: 'application:check-for-update', visible: false}
+      { label: 'Downloading Update', enabled: false, visible: false}
       { type: 'separator' }
       { label: '&Documentation', command: 'application:open-documentation' }
       { label: 'Roadmap', command: 'application:open-roadmap' }

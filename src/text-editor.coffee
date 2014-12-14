@@ -1098,33 +1098,48 @@ class TextEditor extends Model
   # abort the transaction, call {::abortTransaction} to terminate the function's
   # execution and revert any changes performed up to the abortion.
   #
-  # * `groupingInterval` (optional) This is the sames as the `groupingInterval`
-  #    parameter in {::beginTransaction}
-  # * `fn` A {Function} to call inside the transaction.
-  transact: (groupingInterval, fn) -> @buffer.transact(groupingInterval, fn)
-
-  # Extended: Start an open-ended transaction.
-  #
-  # Call {::commitTransaction} or {::abortTransaction} to terminate the
-  # transaction. If you nest calls to transactions, only the outermost
-  # transaction is considered. You must match every begin with a matching
-  # commit, but a single call to abort will cancel all nested transactions.
-  #
   # * `groupingInterval` (optional) The {Number} of milliseconds for which this
   #   transaction should be considered 'groupable' after it begins. If a transaction
   #   with a positive `groupingInterval` is committed while the previous transaction is
   #   still 'groupable', the two transactions are merged with respect to undo and redo.
+  # * `fn` A {Function} to call inside the transaction.
+  transact: (groupingInterval, fn) -> @buffer.transact(groupingInterval, fn)
+
+  # Deprecated: Start an open-ended transaction.
   beginTransaction: (groupingInterval) -> @buffer.beginTransaction(groupingInterval)
 
-  # Extended: Commit an open-ended transaction started with {::beginTransaction}
-  # and push it to the undo stack.
-  #
-  # If transactions are nested, only the outermost commit takes effect.
+  # Deprecated: Commit an open-ended transaction started with {::beginTransaction}.
   commitTransaction: -> @buffer.commitTransaction()
 
   # Extended: Abort an open transaction, undoing any operations performed so far
   # within the transaction.
   abortTransaction: -> @buffer.abortTransaction()
+
+  # Extended: Create a pointer to the current state of the buffer for use
+  # with {::revertToCheckpoint} and {::groupChangesSinceCheckpoint}.
+  #
+  # Returns a checkpoint value.
+  createCheckpoint: -> @buffer.createCheckpoint()
+
+  # Extended: Revert the buffer to the state it was in when the given
+  # checkpoint was created.
+  #
+  # The redo stack will be empty following this operation, so changes since the
+  # checkpoint will be lost. If the given checkpoint is no longer present in the
+  # undo history, no changes will be made to the buffer and this method will
+  # return `false`.
+  #
+  # Returns a {Boolean} indicating whether the operation succeeded.
+  revertToCheckpoint: (checkpoint) -> @buffer.revertToCheckpoint(checkpoint)
+
+  # Extended: Group all changes since the given checkpoint into a single
+  # transaction for purposes of undo/redo.
+  #
+  # If the given checkpoint is no longer present in the undo history, no
+  # grouping will be performed and this method will return `false`.
+  #
+  # Returns a {Boolean} indicating whether the operation succeeded.
+  groupChangesSinceCheckpoint: (checkpoint) -> @buffer.groupChangesSinceCheckpoint(checkpoint)
 
   ###
   Section: TextEditor Coordinates
@@ -1248,18 +1263,33 @@ class TextEditor extends Model
   # ## Arguments
   #
   # * `marker` A {Marker} you want this decoration to follow.
-  # * `decorationParams` An {Object} representing the decoration e.g. `{type: 'gutter', class: 'linter-error'}`
-  #   * `type` There are a few supported decoration types: `gutter`, `line`, and `highlight`
+  # * `decorationParams` An {Object} representing the decoration e.g.
+  #   `{type: 'gutter', class: 'linter-error'}`
+  #   * `type` There are a few supported decoration types: `gutter`, `line`,
+  #     `highlight`, and `overlay`. The behavior of the types are as follows:
+  #     * `gutter` Adds the given `class` to the line numbers overlapping the
+  #       rows spanned by the marker.
+  #     * `line` Adds the given `class` to the lines overlapping the rows
+  #        spanned by the marker.
+  #     * `highlight` Creates a `.highlight` div with the nested class with up
+  #       to 3 nested regions that fill the area spanned by the marker.
+  #     * `overlay` Positions the view associated with the given item at the
+  #       head or tail of the given marker, depending on the `position`
+  #       property.
   #   * `class` This CSS class will be applied to the decorated line number,
   #     line, or highlight.
-  #   * `onlyHead` (optional) If `true`, the decoration will only be applied to the head
-  #     of the marker. Only applicable to the `line` and `gutter` types.
-  #   * `onlyEmpty` (optional) If `true`, the decoration will only be applied if the
-  #     associated marker is empty. Only applicable to the `line` and
+  #   * `onlyHead` (optional) If `true`, the decoration will only be applied to
+  #     the head of the marker. Only applicable to the `line` and `gutter`
+  #     types.
+  #   * `onlyEmpty` (optional) If `true`, the decoration will only be applied if
+  #     the associated marker is empty. Only applicable to the `line` and
   #     `gutter` types.
-  #   * `onlyNonEmpty` (optional) If `true`, the decoration will only be applied if the
-  #     associated marker is non-empty.  Only applicable to the `line` and
-  #     gutter types.
+  #   * `onlyNonEmpty` (optional) If `true`, the decoration will only be applied
+  #     if the associated marker is non-empty.  Only applicable to the `line`
+  #     and gutter types.
+  #   * `position` (optional) Only applicable to decorations of type `overlay`,
+  #     controls where the overlay view is positioned relative to the marker.
+  #     Values can be `'head'` (the default), or `'tail'`.
   #
   # Returns a {Decoration} object
   decorateMarker: (marker, decorationParams) ->
@@ -1277,6 +1307,51 @@ class TextEditor extends Model
   # Returns an empty object when no decorations are found
   decorationsForScreenRowRange: (startScreenRow, endScreenRow) ->
     @displayBuffer.decorationsForScreenRowRange(startScreenRow, endScreenRow)
+
+  # Extended: Get all decorations.
+  #
+  # * `propertyFilter` (optional) An {Object} containing key value pairs that
+  #   the returned decorations' properties must match.
+  #
+  # Returns an {Array} of {Decoration}s.
+  getDecorations: (propertyFilter) ->
+    @displayBuffer.getDecorations(propertyFilter)
+
+  # Extended: Get all decorations of type 'line'.
+  #
+  # * `propertyFilter` (optional) An {Object} containing key value pairs that
+  #   the returned decorations' properties must match.
+  #
+  # Returns an {Array} of {Decoration}s.
+  getLineDecorations: (propertyFilter) ->
+    @displayBuffer.getLineDecorations(propertyFilter)
+
+  # Extended: Get all decorations of type 'gutter'.
+  #
+  # * `propertyFilter` (optional) An {Object} containing key value pairs that
+  #   the returned decorations' properties must match.
+  #
+  # Returns an {Array} of {Decoration}s.
+  getGutterDecorations: (propertyFilter) ->
+    @displayBuffer.getGutterDecorations(propertyFilter)
+
+  # Extended: Get all decorations of type 'highlight'.
+  #
+  # * `propertyFilter` (optional) An {Object} containing key value pairs that
+  #   the returned decorations' properties must match.
+  #
+  # Returns an {Array} of {Decoration}s.
+  getHighlightDecorations: (propertyFilter) ->
+    @displayBuffer.getHighlightDecorations(propertyFilter)
+
+  # Extended: Get all decorations of type 'overlay'.
+  #
+  # * `propertyFilter` (optional) An {Object} containing key value pairs that
+  #   the returned decorations' properties must match.
+  #
+  # Returns an {Array} of {Decoration}s.
+  getOverlayDecorations: (propertyFilter) ->
+    @displayBuffer.getOverlayDecorations(propertyFilter)
 
   decorationForId: (id) ->
     @displayBuffer.decorationForId(id)
@@ -2448,7 +2523,8 @@ class TextEditor extends Model
       @commentScopeSelector.matches(scopeDescriptor)
 
   logCursorScope: ->
-    console.log @getLastCursor().getScopeDescriptor()
+    scopeDescriptor = @getLastCursor().getScopeDescriptor()
+    console.log scopeDescriptor.scopes, scopeDescriptor
 
   # {Delegates to: DisplayBuffer.tokenForBufferPosition}
   tokenForBufferPosition: (bufferPosition) -> @displayBuffer.tokenForBufferPosition(bufferPosition)
@@ -2471,18 +2547,21 @@ class TextEditor extends Model
       if selection.isEmpty()
         previousRange = selection.getBufferRange()
         selection.selectLine()
-        selection.copy(maintainClipboard)
+        selection.copy(maintainClipboard, true)
         selection.setBufferRange(previousRange)
       else
-        selection.copy(maintainClipboard)
+        selection.copy(maintainClipboard, false)
       maintainClipboard = true
 
   # Essential: For each selection, cut the selected text.
   cutSelectedText: ->
     maintainClipboard = false
     @mutateSelectedText (selection) ->
-      selection.selectLine() if selection.isEmpty()
-      selection.cut(maintainClipboard)
+      if selection.isEmpty()
+        selection.selectLine()
+        selection.cut(maintainClipboard, true)
+      else
+        selection.cut(maintainClipboard, false)
       maintainClipboard = true
 
   # Essential: For each selection, replace the selected text with the contents of
@@ -2494,20 +2573,32 @@ class TextEditor extends Model
   #
   # * `options` (optional) See {Selection::insertText}.
   pasteText: (options={}) ->
-    {text, metadata} = atom.clipboard.readWithMetadata()
+    {text: clipboardText, metadata} = atom.clipboard.readWithMetadata()
+    metadata ?= {}
+    options.autoIndent = @shouldAutoIndentOnPaste()
 
-    if metadata?.selections?.length is @getSelections().length
-      @mutateSelectedText (selection, index) ->
-        text = metadata.selections[index]
+    @mutateSelectedText (selection, index) =>
+      if metadata.selections?.length is @getSelections().length
+        {text, indentBasis, fullLine} = metadata.selections[index]
+      else
+        {indentBasis, fullLine} = metadata
+        text = clipboardText
+
+      delete options.indentBasis
+      {cursor} = selection
+      if indentBasis?
+        containsNewlines = text.indexOf('\n') isnt -1
+        if containsNewlines or !cursor.hasPrecedingCharactersOnLine()
+          options.indentBasis ?= indentBasis
+
+      if fullLine and selection.isEmpty()
+        oldPosition = selection.getBufferRange().start
+        selection.setBufferRange([[oldPosition.row, 0], [oldPosition.row, 0]])
         selection.insertText(text, options)
-      return
-
-    if metadata?.indentBasis? and atom.config.get(@getLastCursor().getScopeDescriptor(), "editor.normalizeIndentOnPaste")
-      containsNewlines = text.indexOf('\n') isnt -1
-      if containsNewlines or !@getLastCursor().hasPrecedingCharactersOnLine()
-        options.indentBasis ?= metadata.indentBasis
-
-    @insertText(text, options)
+        newPosition = oldPosition.translate([1, 0])
+        selection.setBufferRange([newPosition, newPosition])
+      else
+        selection.insertText(text, options)
 
   # Public: For each selection, if the selection is empty, cut all characters
   # of the containing line following the cursor. Otherwise cut the selected
@@ -2722,6 +2813,9 @@ class TextEditor extends Model
 
   shouldAutoIndent: ->
     atom.config.get(@getRootScopeDescriptor(), "editor.autoIndent")
+
+  shouldAutoIndentOnPaste: ->
+    atom.config.get(@getRootScopeDescriptor(), "editor.autoIndentOnPaste")
 
   shouldShowInvisibles: ->
     not @mini and atom.config.get(@getRootScopeDescriptor(), 'editor.showInvisibles')

@@ -1,6 +1,5 @@
 {EventEmitter} = require 'events'
 _ = require 'underscore-plus'
-shellAutoUpdater = require 'auto-updater'
 SquirrelUpdate = require './squirrel-update'
 
 class AutoUpdater
@@ -9,15 +8,10 @@ class AutoUpdater
   setFeedUrl: (@updateUrl) ->
 
   quitAndInstall: ->
-    unless SquirrelUpdate.existsSync()
-      shellAutoUpdater.quitAndInstall()
-      return
-
-    @installUpdate (error) ->
-      return if error?
-
-      SquirrelUpdate.spawn ['--processStart', 'atom.exe'], ->
-        shellAutoUpdater.quitAndInstall()
+    if SquirrelUpdate.existsSync()
+      SquirrelUpdate.restartAtom()
+    else
+      require('auto-updater').quitAndInstall()
 
   downloadUpdate: (callback) ->
     SquirrelUpdate.spawn ['--download', @updateUrl], (error, stdout) ->
@@ -36,6 +30,9 @@ class AutoUpdater
   installUpdate: (callback) ->
     SquirrelUpdate.spawn(['--update', @updateUrl], callback)
 
+  supportsUpdates: ->
+    SquirrelUpdate.existsSync()
+
   checkForUpdates: ->
     throw new Error('Update URL is not set') unless @updateUrl
 
@@ -47,7 +44,6 @@ class AutoUpdater
 
     @downloadUpdate (error, update) =>
       if error?
-        console.log "Failed to download: #{error.message} - #{error.code} - #{error.stdout}"
         @emit 'update-not-available'
         return
 
@@ -57,11 +53,8 @@ class AutoUpdater
 
       @installUpdate (error) =>
         if error?
-          console.log "Failed to update: #{error.message} - #{error.code} - #{error.stdout}"
           @emit 'update-not-available'
           return
-
-        console.log "Updated to #{update.version}"
 
         @emit 'update-available'
         @emit 'update-downloaded', {}, update.releaseNotes, update.version, new Date(), 'https://atom.io', => @quitAndInstall()

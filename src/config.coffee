@@ -526,6 +526,9 @@ class Config
 
   # Extended: Restore the global setting at `keyPath` to its default value.
   #
+  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
+  #   See [the scopes docs](https://atom.io/docs/latest/advanced/scopes-and-scope-descriptors)
+  #   for more information.
   # * `keyPath` The {String} name of the key.
   #
   # Returns the new value.
@@ -601,18 +604,11 @@ class Config
       schema = schema.properties[key]
     schema
 
-  # Extended: Returns a new {Object} containing all of the global settings and
+  # Deprecated: Returns a new {Object} containing all of the global settings and
   # defaults. Returns the scoped settings when a `scopeSelector` is specified.
-  #
-  # * `scopeSelector` (optional) {String}. eg. '.source.ruby'
-  getSettings: (scopeSelector) ->
-    settings = _.deepExtend(@settings, @defaultSettings)
-
-    if scopeSelector?
-      scopedSettings = @scopedSettingsStore.propertiesForSelector(scopeSelector)
-      settings = _.deepExtend(scopedSettings, settings)
-
-    settings
+  getSettings: ->
+    deprecate "Use ::get(keyPath) instead"
+    _.deepExtend(@settings, @defaultSettings)
 
   # Extended: Get the {String} path to the config file being used.
   getUserConfigPath: ->
@@ -721,20 +717,25 @@ class Config
       @configFileHasErrors = false
     catch error
       @configFileHasErrors = true
-      console.error "Failed to load user config '#{@configFilePath}'", error.message
-      console.error error.stack
+      @notifyFailure('Failed to load config.cson', error)
 
   observeUserConfig: ->
     try
       @watchSubscription ?= pathWatcher.watch @configFilePath, (eventType) =>
         @loadUserConfig() if eventType is 'change' and @watchSubscription?
     catch error
-      console.error "Failed to watch user config '#{@configFilePath}'", error.message
-      console.error error.stack
+      @notifyFailure('Failed to watch user config', error)
 
   unobserveUserConfig: ->
     @watchSubscription?.close()
     @watchSubscription = null
+
+  notifyFailure: (errorMessage, error) ->
+    message = "#{errorMessage}"
+    detail = error.stack
+    atom.notifications.addError(message, {detail, dismissable: true})
+    console.error message
+    console.error detail
 
   save: ->
     allSettings = global: @settings

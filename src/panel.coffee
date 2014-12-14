@@ -14,13 +14,14 @@ class Panel
   Section: Construction and Destruction
   ###
 
-  constructor: ({@viewRegistry, @item, @visible, @priority, @className}) ->
+  constructor: ({@item, @visible, @priority, @className}={}) ->
     @emitter = new Emitter
     @visible ?= true
     @priority ?= 100
 
   # Public: Destroy and remove this panel from the UI.
   destroy: ->
+    @hide()
     @emitter.emit 'did-destroy', this
     @emitter.dispose()
 
@@ -50,15 +51,8 @@ class Panel
   Section: Panel Details
   ###
 
-  # Public: Gets this panel model's view DOM node.
-  #
-  # Returns an `<atom-panel>` {Element}
-  getView: -> @viewRegistry.getView(this)
-
-  # Public: Gets your panel contents view.
-  #
-  # Returns an {Element} or jQuery element, depeneding on how you created the panel.
-  getItemView: -> @viewRegistry.getView(@item)
+  # Public: Returns the panel's item.
+  getItem: -> @item
 
   # Public: Returns a {Number} indicating this panel's priority.
   getPriority: -> @priority

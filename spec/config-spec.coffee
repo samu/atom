@@ -128,6 +128,12 @@ describe "Config", ->
       expect(atom.config.get("foo")).toEqual 'a\\.b': 1, b: 2
 
   describe ".toggle(keyPath)", ->
+    beforeEach ->
+      jasmine.snapshotDeprecations()
+
+    afterEach ->
+      jasmine.restoreDeprecationsSnapshot()
+
     it "negates the boolean value of the current key path value", ->
       atom.config.set('foo.a', 1)
       atom.config.toggle('foo.a')
@@ -246,23 +252,12 @@ describe "Config", ->
       atom.config.setDefaults("foo", bar: baz: 10)
       atom.config.set("foo.ok", 12)
 
+      jasmine.snapshotDeprecations()
       expect(atom.config.getSettings().foo).toEqual
         ok: 12
         bar:
           baz: 10
-
-    describe "when scoped settings are used", ->
-      it "returns all the scoped settings including all the defaults", ->
-        atom.config.setDefaults("foo", bar: baz: 10)
-        atom.config.set("foo.ok", 12)
-        atom.config.addScopedSettings("default", ".source.coffee", foo: bar: baz: 42)
-        atom.config.addScopedSettings("default", ".source.coffee", foo: bar: omg: 'omg')
-
-        expect(atom.config.getSettings(".source.coffee").foo).toEqual
-          ok: 12
-          bar:
-            baz: 42
-            omg: 'omg'
+      jasmine.restoreDeprecationsSnapshot()
 
   describe ".pushAtKeyPath(keyPath, value)", ->
     it "pushes the given value to the array at the key path and updates observers", ->
@@ -298,6 +293,12 @@ describe "Config", ->
       expect(observeHandler).toHaveBeenCalledWith atom.config.get("foo.bar.baz")
 
   describe ".getPositiveInt(keyPath, defaultValue)", ->
+    beforeEach ->
+      jasmine.snapshotDeprecations()
+
+    afterEach ->
+      jasmine.restoreDeprecationsSnapshot()
+
     it "returns the proper coerced value", ->
       atom.config.set('editor.preferredLineLength', 0)
       expect(atom.config.getPositiveInt('editor.preferredLineLength', 80)).toBe 1
@@ -470,7 +471,7 @@ describe "Config", ->
 
     it "does not fire the callback once the observe subscription is off'ed", ->
       observeHandler.reset() # clear the initial call
-      observeSubscription.off()
+      observeSubscription.dispose()
       atom.config.set('foo.bar.baz', "value 2")
       expect(observeHandler).not.toHaveBeenCalled()
 
@@ -554,11 +555,13 @@ describe "Config", ->
     describe "when the config file contains invalid cson", ->
       beforeEach ->
         spyOn(console, 'error')
+        spyOn(atom.notifications, 'addError')
         fs.writeFileSync(atom.config.configFilePath, "{{{{{")
 
       it "logs an error to the console and does not overwrite the config file on a subsequent save", ->
         atom.config.loadUserConfig()
         expect(console.error).toHaveBeenCalled()
+        expect(atom.notifications.addError.callCount).toBe 1
         atom.config.set("hair", "blonde") # trigger a save
         expect(atom.config.save).not.toHaveBeenCalled()
 
@@ -691,7 +694,6 @@ describe "Config", ->
             expect(noChangeSpy).not.toHaveBeenCalled()
             expect(atom.config.get(['.source.ruby'], 'foo.bar')).toBe 'baz'
             expect(atom.config.get(['.source.ruby'], 'foo.scoped')).toBe true
-
 
     describe "when the config file changes to omit a setting with a default", ->
       it "resets the setting back to the default", ->

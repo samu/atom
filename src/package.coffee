@@ -156,7 +156,7 @@ class Package
     catch e
       console.warn "Failed to activate package named '#{@name}'", e.stack
 
-    @activationDeferred.resolve()
+    @activationDeferred?.resolve()
 
   activateConfig: ->
     return if @configActivated
@@ -254,7 +254,7 @@ class Package
     grammarPaths = fs.listSync(grammarsDirPath, ['json', 'cson'])
     for grammarPath in grammarPaths
       try
-        grammar = atom.syntax.readGrammarSync(grammarPath)
+        grammar = atom.grammars.readGrammarSync(grammarPath)
         grammar.packageName = @name
         @grammars.push(grammar)
         grammar.activate()
@@ -268,7 +268,7 @@ class Package
     return Q() if @grammarsLoaded
 
     loadGrammar = (grammarPath, callback) =>
-      atom.syntax.readGrammar grammarPath, (error, grammar) =>
+      atom.grammars.readGrammar grammarPath, (error, grammar) =>
         if error?
           console.warn("Failed to load grammar: #{grammarPath}", error.stack ? error)
         else
@@ -338,7 +338,7 @@ class Package
   reloadStylesheets: ->
     oldSheets = _.clone(@stylesheets)
     @loadStylesheets()
-    @stylesheetDisposables.dispose()
+    @stylesheetDisposables?.dispose()
     @stylesheetDisposables = new CompositeDisposable
     @stylesheetsActivated = false
     @activateStylesheets()
@@ -408,6 +408,16 @@ class Package
           @activationCommands[selector].push(commands...)
 
     if @metadata.activationEvents?
+      deprecate """
+        Use `activationCommands` instead of `activationEvents` in your package.json
+        Commands should be grouped by selector as follows:
+        ```json
+          "activationCommands": {
+            "atom-workspace": ["foo:bar", "foo:baz"],
+            "atom-text-editor": ["foo:quux"]
+          }
+        ```
+      """
       if _.isArray(@metadata.activationEvents)
         for eventName in @metadata.activationEvents
           @activationCommands['atom-workspace'] ?= []
